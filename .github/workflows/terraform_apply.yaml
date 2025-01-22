@@ -1,0 +1,62 @@
+name: 'Infra Create'
+
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  # You can use permissions either as a top-level key, to apply to all jobs in the workflow, or within specific jobs
+  # Reference: https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs
+  contents: read
+
+jobs:
+  terraform-infra:
+    if: ${{ success() && contains(github.event.head_commit.message, 'terraform_apply node') || contains(github.event.head_commit.message, 'terraform_apply all') }}
+
+    name: nide infra
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+    environment: production
+
+    # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: checkout prod repository
+        uses: actions/checkout@v3
+
+      # Setup AWS credentials to access AWS resources through Terraform
+      # Reference: https://github.com/aws-actions/configure-aws-credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup ECS Service Production environment 
+        run: |
+          echo "ECS Service: Initialize Terraform"
+          terraform init || terraform init -reconfigure
+
+          echo "ECS Service: Format terraform configuration files"
+          terraform fmt
+
+          echo "ECS Service: validate terraform configuration files"
+          terraform validate
+
+          echo "ECS Service: Generate plan"
+          terraform plan
+
+          echo "ECS Service: Running terraform apply"
+          terraform apply -auto-approve

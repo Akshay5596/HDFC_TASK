@@ -1,0 +1,53 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main  # Trigger this pipeline on push to the main branch
+  pull_request:
+    branches:
+      - main  # Trigger on pull request to the main branch
+  workflow_dispatch:  # Allows manual triggering of the workflow
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14'  # Specify the Node.js version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run ESLint
+        run: npx eslint . --max-warnings=0  # Fail on linter warnings
+
+      - name: Run npm audit
+        run: npm audit --production --audit-level=high
+
+      - name: Run SAST with CodeQL
+        uses: github/codeql-action/autobuild@v1
+        with:
+          languages: js
+          output: CodeQL database
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          echo "${{ secrets.ECR_PASSWORD }}" | docker login -u AWS --password-stdin ${{ secrets.ECR_ENDPOINT }}
+          docker build -t my-node-app .
+
+      - name: Tag Docker image
+        run: |
+          docker tag my-node-app:latest ${{ secrets.ECR_URI }}:latest
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push ${{ secrets.ECR_URI }}:latest
